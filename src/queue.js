@@ -85,9 +85,34 @@ function getCurrent() {
   return db.prepare('SELECT * FROM queue ORDER BY sort_order ASC, id ASC LIMIT 1').get();
 }
 
+function addToHistory(item) {
+  db.prepare(
+    'INSERT INTO history (video_id, title, added_by) VALUES (?, ?, ?)'
+  ).run(item.video_id, item.title, item.added_by);
+  // Keep only the last 30 entries
+  db.prepare(`
+    DELETE FROM history WHERE id NOT IN (
+      SELECT id FROM history ORDER BY played_at DESC, id DESC LIMIT 30
+    )
+  `).run();
+}
+
+function getHistory() {
+  return db.prepare('SELECT * FROM history ORDER BY played_at DESC, id DESC LIMIT 30').all();
+}
+
+function isInQueue(videoId) {
+  return !!db.prepare('SELECT 1 FROM queue WHERE video_id = ?').get(videoId);
+}
+
+function isInHistory(videoId) {
+  return db.prepare('SELECT * FROM history WHERE video_id = ? ORDER BY played_at DESC LIMIT 1').get(videoId) || null;
+}
+
 function removeCurrent() {
   const current = getCurrent();
   if (!current) return null;
+  addToHistory(current);
   db.prepare('DELETE FROM queue WHERE id = ?').run(current.id);
   return getCurrent();
 }
@@ -120,4 +145,7 @@ module.exports = {
   removeByPosition,
   clearQueue,
   getLength,
+  getHistory,
+  isInQueue,
+  isInHistory,
 };

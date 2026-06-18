@@ -11,7 +11,15 @@ db.exec(`
     added_by TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     added_at INTEGER DEFAULT (strftime('%s', 'now'))
-  )
+  );
+
+  CREATE TABLE IF NOT EXISTS history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id TEXT NOT NULL,
+    title TEXT,
+    added_by TEXT,
+    played_at INTEGER DEFAULT (strftime('%s', 'now'))
+  );
 `);
 
 // Migration: add sort_order if it doesn't exist yet
