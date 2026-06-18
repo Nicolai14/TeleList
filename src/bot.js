@@ -51,6 +51,7 @@ function setupBot(token) {
     if (text.startsWith('/')) return next();
 
     const urls = text.match(/https?:\/\/[^\s]+/g) || [];
+    const originalMsgId = ctx.message.message_id;
 
     for (const url of urls) {
       const videoId = extractVideoId(url);
@@ -62,9 +63,10 @@ function setupBot(token) {
 
       if (isInQueue(videoId)) {
         const msg = await ctx.reply('❌ Dieses Video ist bereits in der Queue.', {
-          reply_to_message_id: ctx.message.message_id,
+          reply_to_message_id: originalMsgId,
         });
         deleteAfter(ctx, msg.message_id);
+        deleteAfter(ctx, originalMsgId);
         continue;
       }
 
@@ -76,14 +78,15 @@ function setupBot(token) {
           : `vor ${Math.round(minutesAgo / 60)} Stunde${Math.round(minutesAgo / 60) !== 1 ? 'n' : ''}`;
         const msg = await ctx.reply(
           `❌ "${historyEntry.title || videoId}" wurde bereits gespielt (${timeStr}).`,
-          { reply_to_message_id: ctx.message.message_id }
+          { reply_to_message_id: originalMsgId }
         );
         deleteAfter(ctx, msg.message_id);
+        deleteAfter(ctx, originalMsgId);
         continue;
       }
 
       const waitMsg = await ctx.reply('🔍 Analysiere...', {
-        reply_to_message_id: ctx.message.message_id,
+        reply_to_message_id: originalMsgId,
       });
 
       let info;
@@ -95,6 +98,7 @@ function setupBot(token) {
           '❌ Video konnte nicht geladen werden. Ungültiger Link?'
         );
         deleteAfter(ctx, waitMsg.message_id);
+        deleteAfter(ctx, originalMsgId);
         continue;
       }
 
@@ -104,6 +108,7 @@ function setupBot(token) {
           `❌ Video zu lang (${formatDuration(info.duration)}). Maximal 4 Minuten erlaubt.`
         );
         deleteAfter(ctx, waitMsg.message_id);
+        deleteAfter(ctx, originalMsgId);
         continue;
       }
 
@@ -118,6 +123,7 @@ function setupBot(token) {
         `✅ "${info.title}" hinzugefügt (${displayPos}, ${formatDuration(info.duration)})`
       );
       deleteAfter(ctx, waitMsg.message_id);
+      deleteAfter(ctx, originalMsgId);
     }
 
     return next();
