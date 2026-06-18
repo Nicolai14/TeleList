@@ -23,7 +23,7 @@ function isAdmin(ctx) {
   return ctx.from && ctx.from.id === ADMIN_ID;
 }
 
-function deleteAfter(ctx, messageId, seconds = 8) {
+function deleteAfter(ctx, messageId, seconds = 4) {
   setTimeout(() => {
     ctx.telegram.deleteMessage(ctx.chat.id, messageId).catch(() => {});
   }, seconds * 1000);
