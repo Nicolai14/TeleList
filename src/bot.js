@@ -70,14 +70,21 @@ function setupBot(token) {
     }
   });
 
-  bot.command('queue', async (ctx) => {
-    const items = getQueue();
-    if (items.length === 0) return ctx.reply('Die Queue ist leer.');
+  function buildPlaylistText(items) {
+    if (items.length === 0) return 'Die Queue ist leer.';
     const lines = items.map((item, i) => {
       const prefix = i === 0 ? '▶️' : `${i + 1}.`;
       return `${prefix} ${item.title || item.video_id} — ${item.added_by || '?'}`;
     });
-    ctx.reply(`Queue (${items.length} Videos):\n\n${lines.join('\n')}`);
+    return `Queue (${items.length} Videos):\n\n${lines.join('\n')}`;
+  }
+
+  bot.command('queue', async (ctx) => {
+    ctx.reply(buildPlaylistText(getQueue()));
+  });
+
+  bot.command('playlist', async (ctx) => {
+    ctx.reply(buildPlaylistText(getQueue()));
   });
 
   bot.command('skip', async (ctx) => {
@@ -109,7 +116,8 @@ function setupBot(token) {
   bot.command('start', (ctx) => {
     ctx.reply(
       'TeleList Bot aktiv!\n\nSchicke einen YouTube-Link (max. 4 Min.) um ihn zur Queue hinzuzufügen.\n\n' +
-      '/queue — Queue anzeigen\n' +
+      '/playlist — aktuelle Queue anzeigen\n' +
+      '/queue — aktuelle Queue anzeigen\n' +
       '/skip — Überspringen (Admin)\n' +
       '/clear — Queue leeren (Admin)\n' +
       '/remove <pos> — Video entfernen (Admin)'
