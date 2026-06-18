@@ -103,6 +103,24 @@ function setupBot(token) {
     return `Queue (${items.length} Videos):\n\n${lines.join('\n')}`;
   }
 
+  bot.command('help', (ctx) => {
+    ctx.reply(
+      'TeleList – Befehle:\n\n' +
+      '📋 Queue\n' +
+      '/playlist – aktuelle Queue anzeigen\n' +
+      '/queue – aktuelle Queue anzeigen\n' +
+      '/history – letzte 30 gespielte Songs\n\n' +
+      '🎬 Hinzufügen\n' +
+      'Einfach einen YouTube-Link schicken (max. 4 Min.).\n' +
+      'Kein Duplikat aus Queue oder History erlaubt.\n' +
+      'Queue ist fair: jeder User wechselt sich ab.\n\n' +
+      '⚙️ Admin\n' +
+      '/skip – aktuelles Video überspringen\n' +
+      '/remove <nr> – Video an Position Nr. entfernen\n' +
+      '/clear – gesamte Queue leeren'
+    );
+  });
+
   bot.command('queue', async (ctx) => {
     ctx.reply(buildPlaylistText(getQueue()));
   });
