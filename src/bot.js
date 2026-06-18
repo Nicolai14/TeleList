@@ -1,4 +1,4 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 const {
   extractVideoId,
   fetchVideoInfo,
@@ -6,10 +6,10 @@ const {
   MAX_DURATION_SECONDS,
   addToQueue,
   getQueue,
+  getCurrent,
   removeCurrent,
   removeByPosition,
   clearQueue,
-  getLength,
   getHistory,
   isInQueue,
   isInHistory,
@@ -17,6 +17,7 @@ const {
 const { broadcastNewItem, broadcastQueueUpdate } = require('./server');
 
 const ADMIN_ID = parseInt(process.env.ADMIN_TELEGRAM_ID);
+const SKIP_VOTES_NEEDED = 2;
 
 function isAdmin(ctx) {
   return ctx.from && ctx.from.id === ADMIN_ID;
@@ -26,6 +27,19 @@ function deleteAfter(ctx, messageId, seconds = 8) {
   setTimeout(() => {
     ctx.telegram.deleteMessage(ctx.chat.id, messageId).catch(() => {});
   }, seconds * 1000);
+}
+
+// In-memory vote state — resets when song changes or skip happens
+let skipVote = { videoId: null, voters: new Set(), msgId: null, chatId: null };
+
+function resetSkipVote() {
+  skipVote = { videoId: null, voters: new Set(), msgId: null, chatId: null };
+}
+
+function deleteVoteMessage(telegram) {
+  if (skipVote.msgId) {
+    telegram.deleteMessage(skipVote.chatId, skipVote.msgId).catch(() => {});
+  }
 }
 
 function setupBot(token) {
@@ -109,6 +123,74 @@ function setupBot(token) {
     return next();
   });
 
+  // Vote skip handler — used by both /voteskip command and inline button
+  async function handleVoteSkip(ctx) {
+    const userId = ctx.from.id;
+    const current = getCurrent();
+
+    if (!current) {
+      if (ctx.callbackQuery) return ctx.answerCbQuery('Gerade spielt nichts.');
+      return ctx.reply('Gerade spielt nichts.');
+    }
+
+    // Reset vote state if the song changed
+    if (skipVote.videoId !== current.video_id) {
+      resetSkipVote();
+      skipVote.videoId = current.video_id;
+    }
+
+    if (skipVote.voters.has(userId)) {
+      if (ctx.callbackQuery) return ctx.answerCbQuery('Du hast bereits abgestimmt.');
+      return;
+    }
+
+    skipVote.voters.add(userId);
+    const count = skipVote.voters.size;
+
+    if (ctx.callbackQuery) ctx.answerCbQuery('Stimme gezählt! 👍');
+
+    if (count >= SKIP_VOTES_NEEDED) {
+      const savedMsgId = skipVote.msgId;
+      const savedChatId = skipVote.chatId;
+
+      removeCurrent();
+      broadcastQueueUpdate();
+      resetSkipVote();
+
+      if (savedMsgId) {
+        ctx.telegram.deleteMessage(savedChatId, savedMsgId).catch(() => {});
+      }
+
+      const next = getCurrent();
+      ctx.reply(
+        next
+          ? `⏭ Übersprungen! (${SKIP_VOTES_NEEDED} Stimmen)\nWeiter: "${next.title || next.video_id}"`
+          : `⏭ Übersprungen! (${SKIP_VOTES_NEEDED} Stimmen)\nQueue ist leer.`
+      );
+      return;
+    }
+
+    const voteText =
+      `⏭ Skip-Abstimmung für "${current.title || current.video_id}"\n` +
+      `👍 ${count}/${SKIP_VOTES_NEEDED} Stimmen`;
+    const keyboard = Markup.inlineKeyboard([
+      Markup.button.callback('👍 Überspringen', 'vote_skip'),
+    ]);
+
+    if (skipVote.msgId) {
+      await ctx.telegram
+        .editMessageText(skipVote.chatId, skipVote.msgId, null, voteText, keyboard)
+        .catch(() => {});
+    } else {
+      const msg = await ctx.reply(voteText, keyboard);
+      skipVote.msgId = msg.message_id;
+      skipVote.chatId = ctx.chat.id;
+    }
+  }
+
+  bot.command('voteskip', (ctx) => handleVoteSkip(ctx));
+  bot.action('vote_skip', (ctx) => handleVoteSkip(ctx));
+
   function buildPlaylistText(items) {
     if (items.length === 0) return 'Die Queue ist leer.';
     const lines = items.map((item, i) => {
@@ -129,8 +211,10 @@ function setupBot(token) {
       'Einfach einen YouTube-Link schicken (max. 4 Min.).\n' +
       'Kein Duplikat aus Queue oder History erlaubt.\n' +
       'Queue ist fair: jeder User wechselt sich ab.\n\n' +
+      '⏭ Abstimmung\n' +
+      `/voteskip – Skip-Abstimmung starten (${SKIP_VOTES_NEEDED} Stimmen nötig)\n\n` +
       '⚙️ Admin\n' +
-      '/skip – aktuelles Video überspringen\n' +
+      '/skip – aktuelles Video sofort überspringen\n' +
       '/remove <nr> – Video an Position Nr. entfernen\n' +
       '/clear – gesamte Queue leeren'
     );
@@ -152,7 +236,9 @@ function setupBot(token) {
   });
 
   bot.command('skip', (ctx) => {
-    if (!isAdmin(ctx)) return ctx.reply('Nur der Admin kann skippen.');
+    if (!isAdmin(ctx)) return ctx.reply('Nur der Admin kann direkt skippen. Nutze /voteskip.');
+    deleteVoteMessage(ctx.telegram);
+    resetSkipVote();
     const next = removeCurrent();
     broadcastQueueUpdate();
     ctx.reply(next ? `⏭ Übersprungen. Jetzt: ${next.title || next.video_id}` : '⏭ Queue ist jetzt leer.');
@@ -160,6 +246,8 @@ function setupBot(token) {
 
   bot.command('clear', (ctx) => {
     if (!isAdmin(ctx)) return ctx.reply('Nur der Admin kann die Queue leeren.');
+    deleteVoteMessage(ctx.telegram);
+    resetSkipVote();
     clearQueue();
     broadcastQueueUpdate();
     ctx.reply('🗑 Queue geleert.');
@@ -170,6 +258,8 @@ function setupBot(token) {
     const pos = parseInt((ctx.message.text.split(' ')[1] || ''));
     if (isNaN(pos) || pos < 1) return ctx.reply('Verwendung: /remove <position>');
     if (removeByPosition(pos)) {
+      // If current song (pos 1) was removed, reset vote
+      if (pos === 1) { deleteVoteMessage(ctx.telegram); resetSkipVote(); }
       broadcastQueueUpdate();
       ctx.reply(`🗑 Video an Position ${pos} entfernt.`);
     } else {
@@ -178,10 +268,7 @@ function setupBot(token) {
   });
 
   bot.command('start', (ctx) => {
-    ctx.reply(
-      'TeleList Bot aktiv! Schicke einen YouTube-Link (max. 4 Min.).\n\n' +
-      '/help – alle Befehle anzeigen'
-    );
+    ctx.reply('TeleList Bot aktiv! Schicke einen YouTube-Link (max. 4 Min.).\n\n/help – alle Befehle anzeigen');
   });
 
   return bot;
