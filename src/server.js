@@ -2,7 +2,7 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const { getQueue, getCurrent, removeCurrent, clearQueue } = require('./queue');
+const { getQueue, getCurrent, removeCurrent, clearQueue, autoFillFromHistory } = require('./queue');
 
 const app = express();
 const httpServer = createServer(app);
@@ -18,13 +18,10 @@ io.on('connection', (socket) => {
   socket.emit('queue-update', getQueue());
 
   socket.on('skip', () => {
-    const next = removeCurrent();
+    removeCurrent();
+    const next = getCurrent() || autoFillFromHistory();
     io.emit('queue-update', getQueue());
-    if (next) {
-      io.emit('play', next);
-    } else {
-      io.emit('play', null);
-    }
+    io.emit('play', next || null);
   });
 
   socket.on('clear', () => {

@@ -133,6 +133,18 @@ function getLength() {
   return db.prepare('SELECT COUNT(*) as count FROM queue').get().count;
 }
 
+// When queue is empty, pick a random song from history and re-queue it
+function autoFillFromHistory() {
+  if (getLength() > 0) return null;
+  const item = db.prepare('SELECT * FROM history ORDER BY RANDOM() LIMIT 1').get();
+  if (!item) return null;
+  const maxOrder = db.prepare('SELECT MAX(sort_order) as m FROM queue').get().m || 0;
+  db.prepare(
+    'INSERT INTO queue (video_id, title, added_by, sort_order) VALUES (?, ?, ?, ?)'
+  ).run(item.video_id, item.title, '🔀 Zufall', maxOrder + 1);
+  return getCurrent();
+}
+
 module.exports = {
   extractVideoId,
   fetchVideoInfo,
@@ -148,4 +160,5 @@ module.exports = {
   getHistory,
   isInQueue,
   isInHistory,
+  autoFillFromHistory,
 };

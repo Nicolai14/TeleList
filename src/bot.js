@@ -8,6 +8,7 @@ const {
   getQueue,
   getCurrent,
   removeCurrent,
+  autoFillFromHistory,
   removeByPosition,
   clearQueue,
   getHistory,
@@ -160,6 +161,7 @@ function setupBot(token) {
       const savedChatId = skipVote.chatId;
 
       removeCurrent();
+      const next = getCurrent() || autoFillFromHistory();
       broadcastQueueUpdate();
       resetSkipVote();
 
@@ -167,7 +169,6 @@ function setupBot(token) {
         ctx.telegram.deleteMessage(savedChatId, savedMsgId).catch(() => {});
       }
 
-      const next = getCurrent();
       ctx.reply(
         next
           ? `⏭ Übersprungen! (${SKIP_VOTES_NEEDED} Stimmen)\nWeiter: "${next.title || next.video_id}"`
@@ -245,7 +246,8 @@ function setupBot(token) {
     if (!isAdmin(ctx)) return ctx.reply('Nur der Admin kann direkt skippen. Nutze /voteskip.');
     deleteVoteMessage(ctx.telegram);
     resetSkipVote();
-    const next = removeCurrent();
+    removeCurrent();
+    const next = getCurrent() || autoFillFromHistory();
     broadcastQueueUpdate();
     ctx.reply(next ? `⏭ Übersprungen. Jetzt: ${next.title || next.video_id}` : '⏭ Queue ist jetzt leer.');
   });
