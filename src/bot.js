@@ -31,10 +31,11 @@ function deleteAfter(ctx, messageId, seconds = 4) {
 }
 
 // In-memory vote state — resets when song changes or skip happens
-let skipVote = { videoId: null, voters: new Set(), msgId: null, chatId: null };
+let skipVote = { videoId: null, voters: new Set(), msgId: null, chatId: null, timeoutId: null };
 
 function resetSkipVote() {
-  skipVote = { videoId: null, voters: new Set(), msgId: null, chatId: null };
+  if (skipVote.timeoutId) clearTimeout(skipVote.timeoutId);
+  skipVote = { videoId: null, voters: new Set(), msgId: null, chatId: null, timeoutId: null };
 }
 
 function deleteVoteMessage(telegram) {
@@ -192,6 +193,14 @@ function setupBot(token) {
       const msg = await ctx.reply(voteText, keyboard);
       skipVote.msgId = msg.message_id;
       skipVote.chatId = ctx.chat.id;
+
+      // Auto-expire: delete vote message and reset after 20s
+      skipVote.timeoutId = setTimeout(() => {
+        if (skipVote.msgId) {
+          bot.telegram.deleteMessage(skipVote.chatId, skipVote.msgId).catch(() => {});
+        }
+        resetSkipVote();
+      }, 20_000);
     }
   }
 
